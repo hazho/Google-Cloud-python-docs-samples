@@ -16,6 +16,7 @@
 # This test builds and deploys the two secure services
 # to test that they interact properly together.
 
+import backoff
 import datetime
 import os
 import subprocess
@@ -28,6 +29,32 @@ import pytest
 SUFFIX = uuid.uuid4().hex
 PROJECT = os.environ['GOOGLE_CLOUD_PROJECT']
 
+@backoff.on_exception(backoff.expo, Exception, max_tries=3)
+def gcloud_cli(command):
+    """
+    Runs the gcloud CLI with given options, parses the json formatted output
+    and returns the resulting Python object.
+    Usage: gcloud_cli(options)
+        options: command line options
+    Example:
+        result = gcloud_cli("app deploy --no-promote")
+        print(f"Deployed version {result['versions'][0]['id']}")
+    Raises Exception with the stderr output of the last attempt on failure.
+    """
+    output = subprocess.run(
+        f"gcloud {command} --quiet --format=json",
+        capture_output=True,
+        shell=True,
+        check=True,
+    )
+    try:
+        entries = json.loads(output.stdout)
+        return entries
+    except Exception:
+        print("Failed to read log")
+        print(f"gcloud stderr was {output.stderr}")
+
+    raise Exception(output.stderr)
 
 @pytest.fixture
 def deployed_service():
